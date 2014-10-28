@@ -1,0 +1,519 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description" : "Hadoop Cluster Template",
+  "Parameters" : {
+    "HadoopClusterManagerInstanceType" : {
+      "Type" : "String",
+      "Description" : "Type of EC2 instance to launch for Cluster Config server.",
+      "AllowedValues" : [ "r3.large", "r3.xlarge", "r3.xlarge", "r3.2xlarge", "c3.large", "c3.xlarge", "c3.2xlarge", "cc2.8xlarge", "i2.xlarge", "i2.2xlarge", "i2.4xlarge", "i2.8xlarge", "hs1.8xlarge" ],
+      "Default" : "r3.xlarge"
+    },
+    "MyPublicIP" : {
+      "Type" : "String",
+      "Description" : "The source IP address used to access to the hadoop cluster manager",
+      "AllowedPattern" : "^[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}/32$",
+      "Default" : "1.2.3.4/32",
+      "ConstraintDescription" : "must be a valid IP"
+    },
+    "HadoopMasterInstanceType" : {
+      "Type" : "String",
+      "Description" : "Type of EC2 instance to launch for Hadoop Master Server",
+      "AllowedValues" : [ "r3.large", "r3.xlarge", "r3.xlarge", "r3.2xlarge", "c3.large", "c3.xlarge", "c3.2xlarge", "cc2.8xlarge", "i2.xlarge", "i2.2xlarge", "i2.4xlarge", "i2.8xlarge", "hs1.8xlarge" ],
+      "Default" : "r3.xlarge"
+    },
+    "HadoopSlaveInstanceType" : {
+      "Type" : "String",
+      "Description" : "Type of EC2 instance to launch for Hadoop Slave Server.",
+      "AllowedValues" : [ "r3.large", "r3.xlarge", "r3.xlarge", "r3.2xlarge", "c3.large", "c3.xlarge", "c3.2xlarge", "cc2.8xlarge", "i2.xlarge", "i2.2xlarge", "i2.4xlarge", "i2.8xlarge", "hs1.8xlarge" ],
+      "Default" : "i2.xlarge"
+    },
+    "HadoopClusterPrivateKey" : {
+      "Type" : "String",
+      "Description" : "Cluster Manager private key",
+      "Default" : "HadoopClusterPrivateKey"
+    },
+    "PlacementGroup" : {
+      "Type" : "String",
+      "Description" : "Name of existing Placement Group for PHD to be deployed (optional)"
+    },
+    "NATInstanceType" : {
+      "Description" : "NAT EC2 instance type",
+      "Type" : "String",
+      "Default" : "m1.small",
+      "AllowedValues" : [ "t1.micro", "m1.small", "m1.medium", "m1.large", "m1.xlarge", "m2.xlarge", "m2.2xlarge", "m2.4xlarge", "m3.xlarge", "m3.2xlarge", "c1.medium", "c1.xlarge", "cc1.4xlarge", "cc2.8xlarge", "cg1.4xlarge" ],
+      "ConstraintDescription" : "must be a valid EC2 instance type"
+    }
+  },
+  "Mappings" : {
+    "RHELRegionMap" : {
+      "us-east-1" : { "AMI" : "ami-3218595b" },
+      "us-west-1" : { "AMI" : "ami-7080ab35" },
+      "us-west-2" : { "AMI" : "ami-18a23f28" },
+      "sa-east-1" : { "AMI" : "ami-b77dd9aa" },
+      "eu-west-1" : { "AMI" : "ami-f72b3383" },
+      "ap-southeast-1" : { "AMI" : "ami-04bef656" },
+      "ap-southeast-2" : { "AMI" : "ami-517eec6b" },
+      "ap-northeast-1" : { "AMI" : "ami-41108040" }
+    },
+    "NATRegionMap" : {
+      "ap-northeast-1" : { "AMI" : "ami-cd43d9cc" },
+      "ap-southeast-1" : { "AMI" : "ami-f22772a0" },
+      "ap-southeast-2" : { "AMI" : "ami-3bae3201" },
+      "eu-west-1" : { "AMI" : "ami-f3e30084" },
+      "sa-east-1" : { "AMI" : "ami-d78325ca" },
+      "us-east-1" : { "AMI" : "ami-ad227cc4" },
+      "us-west-1" : { "AMI" : "ami-d69aad93" },
+      "us-west-2" : { "AMI" : "ami-f032acc0" }
+    }
+  },
+  "Resources" : {
+    "HadoopClusterManagerSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "VpcId" : {
+          "Ref" : "HadoopClusterVpcId"
+        },
+        "GroupDescription" : "Security Group containing the Hadoop cluster manager resources",
+        "SecurityGroupIngress" : [ {
+          "IpProtocol" : "tcp",
+          "FromPort" : "22",
+          "ToPort" : "22",
+          "CidrIp" : {
+            "Ref" : "MyPublicIP"
+          }
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "5443",
+          "ToPort" : "5443",
+          "CidrIp" : {
+            "Ref" : "MyPublicIP"
+          }
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "0",
+          "ToPort" : "65535",
+          "SourceSecurityGroupId" : {
+            "Ref" : "HadoopClusterSecurityGroup"
+          }
+        } ],
+        "SecurityGroupEgress" : [ {
+          "IpProtocol" : "tcp",
+          "FromPort" : "22",
+          "ToPort" : "22",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "80",
+          "ToPort" : "80",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "443",
+          "ToPort" : "443",
+          "CidrIp" : "0.0.0.0/0"
+        } ]
+      }
+    },
+    "HadoopClusterSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "VpcId" : {
+          "Ref" : "HadoopClusterVpcId"
+        },
+        "GroupDescription" : "Security Group containing Hadoop Master and Slave Servers",
+        "SecurityGroupEgress" : [ {
+          "IpProtocol" : "tcp",
+          "FromPort" : "80",
+          "ToPort" : "80",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "22",
+          "ToPort" : "22",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "5443",
+          "ToPort" : "5443",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "443",
+          "ToPort" : "443",
+          "CidrIp" : "0.0.0.0/0"
+        } ]
+      }
+    },
+    "HadoopClusterSecurityGroupEgress01" : {
+      "Type" : "AWS::EC2::SecurityGroupEgress",
+      "Properties" : {
+        "GroupId" : {
+          "Ref" : "HadoopClusterSecurityGroup"
+        },
+        "IpProtocol" : "tcp",
+        "FromPort" : "0",
+        "ToPort" : "65535",
+        "DestinationSecurityGroupId" : {
+          "Ref" : "HadoopClusterManagerSecurityGroup"
+        }
+      }
+    },
+    "HadoopClusterSecurityGroupEgress02" : {
+      "Type" : "AWS::EC2::SecurityGroupEgress",
+      "Properties" : {
+        "GroupId" : {
+          "Ref" : "HadoopClusterSecurityGroup"
+        },
+        "IpProtocol" : "tcp",
+        "FromPort" : "0",
+        "ToPort" : "65535",
+        "DestinationSecurityGroupId" : {
+          "Ref" : "HadoopClusterSecurityGroup"
+        }
+      }
+    },
+    "HadoopClusterSecurityGroupIngress01" : {
+      "Type" : "AWS::EC2::SecurityGroupIngress",
+      "Properties" : {
+        "GroupId" : {
+          "Ref" : "HadoopClusterSecurityGroup"
+        },
+        "IpProtocol" : "tcp",
+        "FromPort" : "0",
+        "ToPort" : "65535",
+        "SourceSecurityGroupId" : {
+          "Ref" : "HadoopClusterManagerSecurityGroup"
+        }
+      }
+    },
+    "HadoopClusterSecurityGroupIngress02" : {
+      "Type" : "AWS::EC2::SecurityGroupIngress",
+      "Properties" : {
+        "GroupId" : {
+          "Ref" : "HadoopClusterSecurityGroup"
+        },
+        "IpProtocol" : "tcp",
+        "FromPort" : "0",
+        "ToPort" : "65535",
+        "SourceSecurityGroupId" : {
+          "Ref" : "HadoopClusterSecurityGroup"
+        }
+      }
+    },
+    "HadoopClusterManagerInstance" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "ImageId" : { "Fn::FindInMap" : [ "RHELRegionMap", { "Ref" : "AWS::Region" }, "AMI" ] },
+        "Tags" : [ {
+          "Key" : "Name",
+          "Value" : "ClusterConfig.domain.local"
+        } ],
+        "InstanceType" : {
+          "Ref" : "HadoopClusterManagerInstanceType"
+        },
+        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Fn::GetAZs" : "" } ] },
+        "PrivateIpAddress" : "10.100.0.100",
+        "SubnetId" : {
+          "Ref" : "HadoopClusterManagerSubnetAz2"
+        },
+        "KeyName" : {
+          "Ref" : "HadoopClusterPrivateKey"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "\n",
+              [
+                "#!/bin/bash -v",
+                "sleep 10",
+                "",
+                "yum update -y aws-cfn-bootstrap",
+                "#disable things that complain about sudo and tty",
+                "sed -i 's,Defaults    requiretty,#Defaults    requiretty,g' /etc/sudoers",
+                "",
+                ""
+              ]
+            ]
+          }
+        },
+        "SecurityGroupIds" : [ {
+          "Ref" : "HadoopClusterManagerSecurityGroup"
+        } ]
+      }
+    },
+    "HadoopInstances" : "List",
+    "HadoopClusterVpcId" : {
+      "Type" : "AWS::EC2::VPC",
+      "Properties" : {
+        "CidrBlock" : "10.100.0.0/16",
+        "EnableDnsSupport" : "true",
+        "EnableDnsHostnames" : "true"
+      }
+    },
+    "HadoopClusterManagerEIP" : {
+      "Type" : "AWS::EC2::EIP",
+      "Properties" : {
+        "InstanceId" : {
+          "Ref" : "HadoopClusterManagerInstance"
+        },
+        "Domain" : "vpc"
+      }
+    },
+    "InternetGateway" : {
+      "Type" : "AWS::EC2::InternetGateway"
+    },
+    "AttachIGW" : {
+      "Type" : "AWS::EC2::VPCGatewayAttachment",
+      "Properties" : {
+        "InternetGatewayId" : {
+          "Ref" : "InternetGateway"
+        },
+        "VpcId" : {
+          "Ref" : "HadoopClusterVpcId"
+        }
+      },
+      "DependsOn" : "InternetGateway"
+    },
+    "RouteViaIGW" : {
+      "Type" : "AWS::EC2::RouteTable",
+      "Properties" : {
+        "VpcId" : {
+          "Ref" : "HadoopClusterVpcId"
+        }
+      },
+      "DependsOn" : "AttachIGW"
+    },
+    "RouteViaNAT" : {
+      "Type" : "AWS::EC2::RouteTable",
+      "Properties" : {
+        "VpcId" : {
+          "Ref" : "HadoopClusterVpcId"
+        }
+      },
+      "DependsOn" : "AttachIGW"
+    },
+    "HadoopClusterSubnetAz1" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Fn::GetAZs" : "" } ] },
+        "CidrBlock" : "10.100.1.0/24",
+        "Tags" : [ {
+          "Key" : "Subnet",
+          "Value" : "HadoopClusterSubnetAz1"
+        } ],
+        "VpcId" : {
+          "Ref" : "HadoopClusterVpcId"
+        }
+      }
+    },
+    "HadoopClusterSubnetAz2" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "AvailabilityZone" : {
+          "Fn::Select" : [ "1", {
+            "Fn::GetAZs" : ""
+          } ]
+        },
+        "CidrBlock" : "10.100.2.0/24",
+        "Tags" : [ {
+          "Key" : "Subnet",
+          "Value" : "HadoopClusterSubnetAz2"
+        } ],
+        "VpcId" : {
+          "Ref" : "HadoopClusterVpcId"
+        }
+      }
+    },
+    "HadoopClusterManagerSubnetAz2" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Fn::GetAZs" : "" } ] },
+        "CidrBlock" : "10.100.0.0/24",
+        "Tags" : [ {
+          "Key" : "Subnet",
+          "Value" : "HadoopClusterManagerSubnetAz2"
+        } ],
+        "VpcId" : {
+          "Ref" : "HadoopClusterVpcId"
+        }
+      }
+    },
+    "IGWDefaultRoute" : {
+      "Type" : "AWS::EC2::Route",
+      "Properties" : {
+        "RouteTableId" : {
+          "Ref" : "RouteViaIGW"
+        },
+        "DestinationCidrBlock" : "0.0.0.0/0",
+        "GatewayId" : {
+          "Ref" : "InternetGateway"
+        }
+      }
+    },
+    "NATDefaultRoute" : {
+      "Type" : "AWS::EC2::Route",
+      "Properties" : {
+        "RouteTableId" : {
+          "Ref" : "RouteViaNAT"
+        },
+        "DestinationCidrBlock" : "0.0.0.0/0",
+        "InstanceId" : {
+          "Ref" : "NATDevice"
+        }
+      }
+    },
+    "NATIPAddress" : {
+      "Type" : "AWS::EC2::EIP",
+      "DependsOn" : "AttachIGW",
+      "Properties" : {
+        "Domain" : "vpc",
+        "InstanceId" : {
+          "Ref" : "NATDevice"
+        }
+      }
+    },
+    "NATDevice" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "InstanceType" : {
+          "Ref" : "NATInstanceType"
+        },
+        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Fn::GetAZs" : "" } ] },
+        "Tags" : [ {
+          "Key" : "Name",
+          "Value" : "nat.domain.local"
+        } ],
+        "KeyName" : {
+          "Ref" : "HadoopClusterPrivateKey"
+        },
+        "SubnetId" : {
+          "Ref" : "HadoopClusterManagerSubnetAz2"
+        },
+        "SourceDestCheck" : "false",
+        "ImageId" : { "Fn::FindInMap" : [ "NATRegionMap", { "Ref" : "AWS::Region" }, "AMI" ] },
+        "SecurityGroupIds" : [ {
+          "Ref" : "NATSecurityGroup"
+        } ]
+      }
+    },
+    "NATSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable internal access to the NAT device",
+        "VpcId" : {
+          "Ref" : "HadoopClusterVpcId"
+        },
+        "SecurityGroupEgress" : [ {
+          "IpProtocol" : "tcp",
+          "FromPort" : "80",
+          "ToPort" : "80",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "443",
+          "ToPort" : "443",
+          "CidrIp" : "0.0.0.0/0"
+        } ]
+      }
+    },
+    "NATSecurityGroupIngress01" : {
+      "Type" : "AWS::EC2::SecurityGroupIngress",
+      "Properties" : {
+        "GroupId" : {
+          "Ref" : "NATSecurityGroup"
+        },
+        "IpProtocol" : "tcp",
+        "FromPort" : "22",
+        "ToPort" : "22",
+        "SourceSecurityGroupId" : {
+          "Ref" : "HadoopClusterSecurityGroup"
+        }
+      }
+    },
+    "NATSecurityGroupIngress02" : {
+      "Type" : "AWS::EC2::SecurityGroupIngress",
+      "Properties" : {
+        "GroupId" : {
+          "Ref" : "NATSecurityGroup"
+        },
+        "IpProtocol" : "tcp",
+        "FromPort" : "80",
+        "ToPort" : "80",
+        "SourceSecurityGroupId" : {
+          "Ref" : "HadoopClusterSecurityGroup"
+        }
+      }
+    },
+    "NATSecurityGroupIngress03" : {
+      "Type" : "AWS::EC2::SecurityGroupIngress",
+      "Properties" : {
+        "GroupId" : {
+          "Ref" : "NATSecurityGroup"
+        },
+        "IpProtocol" : "tcp",
+        "FromPort" : "443",
+        "ToPort" : "443",
+        "SourceSecurityGroupId" : {
+          "Ref" : "HadoopClusterSecurityGroup"
+        }
+      }
+    },
+    "HadoopClusterSubnetAz1RouteTableAssociation" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : {
+          "Ref" : "HadoopClusterSubnetAz1"
+        },
+        "RouteTableId" : {
+          "Ref" : "RouteViaNAT"
+        }
+      }
+    },
+    "HadoopClusterSubnetAz2RouteTableAssociation" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : {
+          "Ref" : "HadoopClusterSubnetAz2"
+        },
+        "RouteTableId" : {
+          "Ref" : "RouteViaNAT"
+        }
+      }
+    },
+    "HadoopClusterManagerSubnetAz2RouteTableAssociation" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : {
+          "Ref" : "HadoopClusterManagerSubnetAz2"
+        },
+        "RouteTableId" : {
+          "Ref" : "RouteViaIGW"
+        }
+      }
+    }
+  },
+  "Outputs" : {
+    "HadoopClusterSubnetAz1" : {
+      "Description" : "Subnet ids for hadoop cluster subnets",
+      "Value" : {
+        "Fn::Join" : [ ",", [ {
+          "Ref" : "HadoopClusterSubnetAz1"
+        }, {
+          "Ref" : "HadoopClusterSubnetAz2"
+        } ] ]
+      }
+    },
+    "HadoopClusterManagerSubnetAz2" : {
+      "Description" : "Subnet ids for hadoop manager subnet",
+      "Value" : {
+        "Ref" : "HadoopClusterManagerSubnetAz2"
+      }
+    },
+    "HadoopClusterManagerEIP" : {
+      "Value" : {
+        "Ref" : "HadoopClusterManagerEIP"
+      },
+      "Description" : "Public IP address of hadoop cluster manager"
+    }
+  }
+}
